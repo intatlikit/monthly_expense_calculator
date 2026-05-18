@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คำนวณค่าใช้จ่ายต่อเดือน</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f14; --card: #1e1e2a; --border: #2a2a3a;
+    --accent: #7c6af7; --accent2: #f7c06a;
+    --green: #5ce69c; --red: #f76a6a;
+    --text: #e8e8f0; --muted: #7878a0; --input-bg: #12121a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Sarabun', sans-serif; min-height: 100vh; padding: 32px 16px 80px; }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px; opacity: 0.18; pointer-events: none; z-index: 0;
+  }
+  .page { display: none; }
+  .page.active { display: block; }
+  .container { max-width: 680px; margin: 0 auto; position: relative; z-index: 1; }
+
+  /* ── HOME ── */
+  .home-header { text-align: center; margin-bottom: 36px; }
+  .home-header h1 {
+    font-size: 2rem; font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 6px;
+  }
+  .home-header p { color: var(--muted); font-size: 0.9rem; }
+  .profile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .profile-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 20px; cursor: pointer; transition: border-color 0.2s, transform 0.15s; position: relative;
+  }
+  .profile-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .profile-card .p-name { font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
+  .profile-card .p-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 6px; }
+  .profile-card .p-remain { font-family: 'IBM Plex Mono', monospace; font-size: 1.05rem; font-weight: 600; }
+  .profile-card .p-remain.pos { color: var(--green); }
+  .profile-card .p-remain.neg { color: var(--red); }
+  .profile-card .p-delete { position: absolute; top: 10px; right: 12px; background: none; border: none; color: var(--muted); font-size: 1rem; cursor: pointer; transition: color 0.2s; }
+  .profile-card .p-delete:hover { color: var(--red); }
+  .btn-add {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    background: linear-gradient(135deg, #1e1e3a, #1e2a1e); border: 2px dashed var(--accent);
+    border-radius: 16px; padding: 20px; cursor: pointer; color: var(--accent);
+    font-family: 'Sarabun', sans-serif; font-size: 1rem; font-weight: 600; transition: background 0.2s, transform 0.15s;
+  }
+  .btn-add:hover { background: #1e1e3a; transform: translateY(-2px); }
+  .btn-add .plus { font-size: 1.6rem; line-height: 1; }
+
+  /* ── DETAIL ── */
+  .detail-header { display: flex; align-items: center; gap: 14px; margin-bottom: 32px; }
+  .btn-back { background: var(--card); border: 1px solid var(--border); border-radius: 10px; color: var(--muted); font-family: 'Sarabun', sans-serif; font-size: 0.9rem; padding: 8px 16px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+  .btn-back:hover { border-color: var(--accent); color: var(--accent); }
+  .detail-header h2 { font-size: 1.4rem; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+  .name-card { background: linear-gradient(135deg, #1e1e3a 0%, #2a1e1e 100%); border: 1px solid var(--accent2); border-radius: 16px; padding: 20px; margin-bottom: 24px; }
+  .name-card label { font-size: 1rem; font-weight: 600; color: var(--accent2); margin-bottom: 10px; display: block; }
+  .name-card input[type="text"] { width: 100%; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-family: 'Sarabun', sans-serif; font-size: 1.1rem; padding: 12px 16px; outline: none; transition: border-color 0.2s; }
+  .name-card input[type="text"]:focus { border-color: var(--accent2); }
+
+  .salary-card { background: linear-gradient(135deg, #1e1e3a 0%, #1e2a1e 100%); border: 1px solid var(--accent); border-radius: 16px; padding: 24px; margin-bottom: 24px; }
+  .salary-card label { display: flex; align-items: center; gap: 10px; font-size: 1.1rem; font-weight: 600; color: var(--accent2); margin-bottom: 12px; }
+  .salary-input-wrap { display: flex; align-items: center; background: var(--input-bg); border: 1px solid var(--accent); border-radius: 10px; overflow: hidden; }
+  .salary-input-wrap > span { padding: 0 14px; color: var(--accent); font-family: 'IBM Plex Mono', monospace; font-size: 1rem; border-right: 1px solid var(--border); }
+  .salary-input-wrap input { flex: 1; background: transparent; border: none; outline: none; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 1.2rem; padding: 14px; text-align: right; }
+
+  .section-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin: 28px 0 12px; padding-left: 4px; display: flex; align-items: center; gap: 10px; }
+  .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .expense-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 10px; }
+
+  /* Dynamic rows */
+  .dyn-row {
+    display: grid; grid-template-columns: 1fr auto auto; align-items: center;
+    padding: 6px 10px 6px 14px; gap: 8px; border-bottom: 1px solid var(--border); transition: background 0.15s;
+  }
+  .dyn-row:last-child { border-bottom: none; }
+  .dyn-row:hover { background: #22222e; }
+  .dyn-row-inner { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; }
+  .dyn-label-input {
+    background: transparent; border: none; border-bottom: 1px dashed var(--border);
+    color: var(--text); font-family: 'Sarabun', sans-serif; font-size: 0.92rem;
+    outline: none; width: 100%; padding: 2px 0; transition: border-color 0.2s;
+  }
+  .dyn-label-input:focus { border-bottom-color: var(--accent); }
+  .dyn-label-input::placeholder { color: var(--muted); font-style: italic; }
+  .row-input-wrap { display: flex; align-items: center; gap: 6px; }
+  .row-input-wrap span { font-size: 0.8rem; color: var(--muted); font-family: 'IBM Plex Mono', monospace; }
+
+  /* Static rows (fixed items) */
+  .expense-row { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 4px 14px 4px 16px; gap: 12px; border-bottom: 1px solid var(--border); transition: background 0.15s; }
+  .expense-row:last-child { border-bottom: none; }
+  .expense-row:hover { background: #22222e; }
+  .row-label { font-size: 0.95rem; color: var(--text); padding: 8px 0; }
+
+  /* Number inputs */
+  .num-input {
+    background: var(--input-bg); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 0.9rem;
+    padding: 7px 10px; text-align: right; width: 120px; outline: none; transition: border-color 0.2s;
+  }
+  .num-input:focus { border-color: var(--accent); }
+
+  /* salary input (no class, target via .salary-input-wrap) */
+  .salary-input-wrap input { width: auto; }
+
+  /* Delete row btn */
+  .btn-del-row { background: none; border: none; color: var(--muted); font-size: 1rem; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: color 0.2s, background 0.2s; line-height: 1; }
+  .btn-del-row:hover { color: var(--red); background: rgba(247,106,106,0.1); }
+
+  /* Add row btn */
+  .btn-add-row {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 12px; border: none; background: transparent;
+    border-top: 1px dashed var(--border); color: var(--accent);
+    font-family: 'Sarabun', sans-serif; font-size: 0.88rem; font-weight: 600;
+    cursor: pointer; transition: background 0.2s; border-radius: 0 0 14px 14px;
+  }
+  .btn-add-row:hover { background: rgba(124,106,247,0.08); }
+
+  /* Summary */
+  .summary { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-top: 28px; }
+  .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.95rem; }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-row .val { font-family: 'IBM Plex Mono', monospace; font-size: 0.95rem; }
+  .summary-row.highlight { padding: 14px 0 0; margin-top: 8px; border-top: 2px solid var(--accent); border-bottom: none; }
+  .summary-row.highlight .label { font-weight: 700; font-size: 1rem; color: var(--accent2); }
+  .summary-row.highlight .val { font-size: 1.3rem; font-weight: 700; }
+  .val.deduct { color: var(--red); }
+  .val.remain { color: var(--green); }
+
+  /* Banner */
+  .result-banner { margin-top: 24px; border-radius: 16px; padding: 24px; text-align: center; transition: all 0.3s; }
+  .result-banner.positive { background: linear-gradient(135deg, #0e2a1a, #1a3a2a); border: 1px solid var(--green); }
+  .result-banner.negative { background: linear-gradient(135deg, #2a0e0e, #3a1a1a); border: 1px solid var(--red); }
+  .result-banner .banner-label { font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .result-banner .banner-amount { font-family: 'IBM Plex Mono', monospace; font-size: 2.4rem; font-weight: 700; line-height: 1.1; }
+  .result-banner.positive .banner-amount { color: var(--green); }
+  .result-banner.negative .banner-amount { color: var(--red); }
+  .result-banner .banner-note { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
+
+  /* Buttons */
+  .btn-row { display: flex; gap: 12px; margin-top: 24px; }
+  .btn-save { flex: 1; background: linear-gradient(135deg, var(--accent), #5a4fcc); border: none; border-radius: 10px; color: #fff; font-family: 'Sarabun', sans-serif; font-size: 1rem; font-weight: 600; padding: 14px; cursor: pointer; transition: opacity 0.2s; }
+  .btn-save:hover { opacity: 0.85; }
+  .btn-reset { background: transparent; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); font-family: 'Sarabun', sans-serif; font-size: 0.9rem; padding: 10px 22px; cursor: pointer; transition: all 0.2s; }
+  .btn-reset:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 100; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--card); border: 1px solid var(--accent2); border-radius: 20px; padding: 32px; width: 90%; max-width: 360px; text-align: center; }
+  .modal h3 { font-size: 1.2rem; font-weight: 700; color: var(--accent2); margin-bottom: 8px; }
+  .modal p { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+  .modal input[type="text"] { width: 100%; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-family: 'Sarabun', sans-serif; font-size: 1.1rem; padding: 12px 16px; outline: none; transition: border-color 0.2s; margin-bottom: 16px; }
+  .modal input[type="text"]:focus { border-color: var(--accent2); }
+  .modal-btns { display: flex; gap: 10px; }
+  .modal-btns button { flex: 1; padding: 12px; border-radius: 10px; font-family: 'Sarabun', sans-serif; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+  .btn-confirm { background: linear-gradient(135deg, var(--accent), #5a4fcc); border: none; color: #fff; }
+  .btn-confirm:hover { opacity: 0.85; }
+  .btn-cancel { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .btn-cancel:hover { border-color: var(--red); color: var(--red); }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--green); color: #0a2a18; font-weight: 700; padding: 12px 28px; border-radius: 50px; font-size: 0.95rem; opacity: 0; transition: all 0.3s; z-index: 200; white-space: nowrap; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- ══ HOME ══ -->
+<div id="page-home" class="page active">
+  <div class="container">
+    <div class="home-header">
+      <h1>💰 ค่าใช้จ่ายต่อเดือน</h1>
+      <p>เลือกโปรไฟล์หรือเพิ่มใหม่</p>
+    </div>
+    <div class="profile-grid" id="profile-grid"></div>
+  </div>
+</div>
+
+<!-- ══ DETAIL ══ -->
+<div id="page-detail" class="page">
+  <div class="container">
+    <div class="detail-header">
+      <button class="btn-back" onclick="goHome()">← กลับ</button>
+      <h2 id="detail-title">โปรไฟล์</h2>
+    </div>
+
+    <!-- ชื่อ -->
+    <div class="name-card">
+      <label>👤 ชื่อเจ้าของโปรไฟล์</label>
+      <input type="text" id="profile-name" placeholder="เช่น เรา, พี่แนท, สมชาย..." oninput="onNameInput()">
+    </div>
+
+    <!-- เงินเดือน -->
+    <div class="salary-card">
+      <label>💼 เงินเดือน</label>
+      <div class="salary-input-wrap">
+        <span>฿</span>
+        <input class="num-input" id="salary" type="text" inputmode="decimal" value="0" style="width:auto;flex:1;background:transparent;border:none;font-size:1.2rem;padding:14px;">
+      </div>
+    </div>
+
+    <!-- หักก้อนใหญ่ -->
+    <div class="section-label">หักก้อนใหญ่ (Fixed)</div>
+    <div class="expense-card" id="fixed-card">
+      <!-- static rows -->
+      <div class="dyn-row" data-section="fixed" data-key="tax">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="🏦 ภาษี ณ ที่จ่าย" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="fixed" data-key="social">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="🛡️ ประกันสังคม" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="fixed" data-key="invest">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="📈 ลงทุน" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="fixed" data-key="common">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="🏢 ส่วนกลาง" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="fixed" data-key="health">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="🏥 ประกันสุขภาพ" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="fixed" data-key="car_ins">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="🚗 ประกันรถ" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="fixed" data-key="mortgage">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="🏠 ผ่อนบ้าน" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+    </div>
+    <button class="btn-add-row" style="border-radius:10px;border:1px dashed var(--border);margin-bottom:4px;" onclick="addRow('fixed')">＋ เพิ่มรายการหักก้อนใหญ่</button>
+
+    <!-- ค่าใช้จ่ายรายเดือน -->
+    <div class="section-label">ค่าใช้จ่ายรายเดือน</div>
+    <div class="expense-card" id="monthly-card">
+      <div class="dyn-row" data-section="monthly" data-key="shopee">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="🛍️ ชอปปี้" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="monthly" data-key="fuel">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="⛽ ค่าน้ำมัน+ด่วน" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="monthly" data-key="elec">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="💡 ค่าไฟคอนโด" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="monthly" data-key="cowe">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="🌊 โคเว" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="monthly" data-key="mobile">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="📱 ค่ามือถือ+เน็ต (เราและแฟน)" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="monthly" data-key="yt">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="▶️ YouTube Subscribe BG Channel" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="monthly" data-key="netflix">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="🎬 Netflix" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="monthly" data-key="vitamin">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="💊 วิตามิน" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="monthly" data-key="food_wd">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="🍱 กินวันธรรมดา" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+      <div class="dyn-row" data-section="monthly" data-key="food_clean">
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="🥗 อาหารคลีน" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="0"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      </div>
+    </div>
+    <button class="btn-add-row" style="border-radius:10px;border:1px dashed var(--border);margin-bottom:4px;" onclick="addRow('monthly')">＋ เพิ่มรายการค่าใช้จ่าย</button>
+
+    <!-- Summary -->
+    <div class="summary">
+      <div class="summary-row">
+        <span class="label">เงินเดือน</span>
+        <span class="val" id="s_salary">฿0.00</span>
+      </div>
+      <div class="summary-row">
+        <span class="label">หักก้อนใหญ่ทั้งหมด</span>
+        <span class="val deduct" id="s_fixed">-฿0.00</span>
+      </div>
+      <div class="summary-row">
+        <span class="label">คงเหลือหลังหักก้อนใหญ่</span>
+        <span class="val" id="s_after_fixed">฿0.00</span>
+      </div>
+      <div class="summary-row">
+        <span class="label">รวมค่าใช้จ่ายรายเดือน</span>
+        <span class="val deduct" id="s_monthly">-฿0.00</span>
+      </div>
+      <div class="summary-row highlight">
+        <span class="label">💵 เงินคงเหลือสุทธิ</span>
+        <span class="val remain" id="s_remain">฿0.00</span>
+      </div>
+    </div>
+
+    <div class="result-banner positive" id="banner">
+      <div class="banner-label">เงินที่เหลือสุทธิต่อเดือน</div>
+      <div class="banner-amount" id="banner_amount">฿0.00</div>
+      <div class="banner-note" id="banner_note">—</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-save" onclick="saveProfile()">💾 บันทึก</button>
+      <button class="btn-reset" onclick="resetForm()">↺ ล้างค่า</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3>➕ เพิ่มโปรไฟล์ใหม่</h3>
+    <p>ตั้งชื่อเจ้าของโปรไฟล์นี้</p>
+    <input type="text" id="modal-name" placeholder="เช่น เรา, พี่แนท..." maxlength="30">
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal()">ยกเลิก</button>
+      <button class="btn-confirm" onclick="confirmNew()">สร้าง →</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const fmt = n => '฿' + n.toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2});
+const fmtNeg = n => '-฿' + Math.abs(n).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+let profiles = JSON.parse(localStorage.getItem('expense_profiles') || '[]');
+let currentId = null;
+function saveAll() { localStorage.setItem('expense_profiles', JSON.stringify(profiles)); }
+
+/* ── INPUT VALIDATION ──
+   Allow only digits 0-9 and one dot. Block negatives. */
+function sanitizeNum(input) {
+  // Remove anything not digit or dot
+  let v = input.value.replace(/[^0-9.]/g, '');
+  // Allow only one dot
+  const parts = v.split('.');
+  if (parts.length > 2) v = parts[0] + '.' + parts.slice(1).join('');
+  // No negative (already blocked by replace above, but prevent minus key)
+  if (v === '') v = '';
+  input.value = v;
+}
+
+function attachValidation(input) {
+  input.addEventListener('keydown', e => {
+    const allowed = ['Backspace','Delete','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Tab','Enter','Home','End'];
+    if (allowed.includes(e.key)) return;
+    if (e.key === '.' && !input.value.includes('.')) return;
+    if (e.key >= '0' && e.key <= '9') return;
+    e.preventDefault();
+  });
+  input.addEventListener('input', () => { sanitizeNum(input); calc(); });
+  input.addEventListener('blur', () => {
+    if (input.value === '' || input.value === '.') input.value = '0';
+  });
+}
+
+function getVal(input) {
+  const v = parseFloat(input.value);
+  return isNaN(v) || v < 0 ? 0 : v;
+}
+
+/* ── ROW MANAGEMENT ── */
+let rowCounter = 1000;
+
+function makeRow(section, label = '', value = '0') {
+  const key = 'custom_' + (rowCounter++);
+  const row = document.createElement('div');
+  row.className = 'dyn-row';
+  row.dataset.section = section;
+  row.dataset.key = key;
+  row.innerHTML = `
+    <div class="dyn-row-inner">
+      <input class="dyn-label-input" type="text" value="${label}" placeholder="ชื่อรายการ...">
+      <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="${value}"></div>
+    </div>
+    <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+  `;
+  attachValidation(row.querySelector('.num-input'));
+  row.querySelector('.dyn-label-input').addEventListener('input', calc);
+  return row;
+}
+
+function addRow(section) {
+  const card = document.getElementById(section === 'fixed' ? 'fixed-card' : 'monthly-card');
+  const row = makeRow(section);
+  card.appendChild(row);
+  row.querySelector('.dyn-label-input').focus();
+  calc();
+}
+
+function delRow(btn) {
+  const row = btn.closest('.dyn-row');
+  const card = row.closest('.expense-card');
+  if (card.querySelectorAll('.dyn-row').length <= 1) {
+    showToast('⚠️ ต้องมีอย่างน้อย 1 รายการ');
+    return;
+  }
+  row.remove();
+  calc();
+}
+
+/* ── COLLECT DATA FROM DOM ── */
+function collectRows(section) {
+  const card = document.getElementById(section === 'fixed' ? 'fixed-card' : 'monthly-card');
+  return Array.from(card.querySelectorAll('.dyn-row')).map(row => ({
+    key: row.dataset.key,
+    label: row.querySelector('.dyn-label-input').value,
+    value: getVal(row.querySelector('.num-input'))
+  }));
+}
+
+function sumSection(section) {
+  const card = document.getElementById(section === 'fixed' ? 'fixed-card' : 'monthly-card');
+  return Array.from(card.querySelectorAll('.num-input')).reduce((s, el) => s + getVal(el), 0);
+}
+
+/* ── CALC ── */
+function calc() {
+  const salary = getVal(document.getElementById('salary'));
+  const fixed = sumSection('fixed');
+  const monthly = sumSection('monthly');
+  const afterFixed = salary - fixed;
+  const remain = afterFixed - monthly;
+
+  document.getElementById('s_salary').textContent = fmt(salary);
+  document.getElementById('s_fixed').textContent = fmtNeg(fixed);
+  document.getElementById('s_after_fixed').textContent = fmt(afterFixed);
+  document.getElementById('s_monthly').textContent = fmtNeg(monthly);
+  document.getElementById('s_remain').textContent = fmt(remain);
+  document.getElementById('banner_amount').textContent = fmt(remain);
+
+  const banner = document.getElementById('banner');
+  const note = document.getElementById('banner_note');
+  if (remain >= 0) {
+    banner.className = 'result-banner positive';
+    note.textContent = remain >= 10000 ? '🎉 ดีมาก! มีเงินเหลือเก็บเพิ่ม' : '👍 ยังมีเงินเหลือพอใช้';
+  } else {
+    banner.className = 'result-banner negative';
+    note.textContent = '⚠️ ค่าใช้จ่ายเกินรายรับ!';
+  }
+}
+
+/* ── INIT ROW LISTENERS ── */
+function initDetailListeners() {
+  // salary
+  const salaryInput = document.getElementById('salary');
+  attachValidation(salaryInput);
+  // existing rows
+  document.querySelectorAll('#fixed-card .num-input, #monthly-card .num-input').forEach(attachValidation);
+  document.querySelectorAll('.dyn-label-input').forEach(el => el.addEventListener('input', calc));
+}
+
+/* ── RENDER PROFILE INTO DETAIL DOM ── */
+function renderProfile(p) {
+  const fillCard = (cardId, rows) => {
+    const card = document.getElementById(cardId);
+    card.innerHTML = '';
+    rows.forEach(r => {
+      const row = document.createElement('div');
+      row.className = 'dyn-row';
+      row.dataset.section = cardId === 'fixed-card' ? 'fixed' : 'monthly';
+      row.dataset.key = r.key;
+      row.innerHTML = `
+        <div class="dyn-row-inner">
+          <input class="dyn-label-input" type="text" value="${r.label}" placeholder="ชื่อรายการ...">
+          <div class="row-input-wrap"><span>฿</span><input class="num-input" type="text" inputmode="decimal" value="${r.value}"></div>
+        </div>
+        <button class="btn-del-row" title="ลบ" onclick="delRow(this)">✕</button>
+      `;
+      attachValidation(row.querySelector('.num-input'));
+      row.querySelector('.dyn-label-input').addEventListener('input', calc);
+      card.appendChild(row);
+    });
+  };
+
+  document.getElementById('profile-name').value = p.name || '';
+  document.getElementById('detail-title').textContent = p.name || 'โปรไฟล์';
+  document.getElementById('salary').value = p.salary ?? 0;
+  attachValidation(document.getElementById('salary'));
+
+  fillCard('fixed-card', p.fixedRows || defaultFixedRows());
+  fillCard('monthly-card', p.monthlyRows || defaultMonthlyRows());
+  calc();
+}
+
+function defaultFixedRows() {
+  return [
+    {key:'tax', label:'🏦 ภาษี ณ ที่จ่าย', value:0},
+    {key:'social', label:'🛡️ ประกันสังคม', value:0},
+    {key:'invest', label:'📈 ลงทุน', value:0},
+    {key:'common', label:'🏢 ส่วนกลาง', value:0},
+    {key:'health', label:'🏥 ประกันสุขภาพ', value:0},
+    {key:'car_ins', label:'🚗 ประกันรถ', value:0},
+    {key:'mortgage', label:'🏠 ผ่อนบ้าน', value:0},
+  ];
+}
+function defaultMonthlyRows() {
+  return [
+    {key:'shopee', label:'🛍️ ชอปปี้', value:0},
+    {key:'fuel', label:'⛽ ค่าน้ำมัน+ด่วน', value:0},
+    {key:'elec', label:'💡 ค่าไฟคอนโด', value:0},
+    {key:'cowe', label:'🌊 โคเว', value:0},
+    {key:'mobile', label:'📱 ค่ามือถือ+เน็ต (เราและแฟน)', value:0},
+    {key:'yt', label:'▶️ YouTube Subscribe BG Channel', value:0},
+    {key:'netflix', label:'🎬 Netflix', value:0},
+    {key:'vitamin', label:'💊 วิตามิน', value:0},
+    {key:'food_wd', label:'🍱 กินวันธรรมดา', value:0},
+    {key:'food_clean', label:'🥗 อาหารคลีน', value:0},
+  ];
+}
+
+/* ── HOME ── */
+function calcRemain(p) {
+  const fixedSum = (p.fixedRows || []).reduce((s, r) => s + (parseFloat(r.value) || 0), 0);
+  const monthlySum = (p.monthlyRows || []).reduce((s, r) => s + (parseFloat(r.value) || 0), 0);
+  return (parseFloat(p.salary) || 0) - fixedSum - monthlySum;
+}
+
+function renderHome() {
+  const grid = document.getElementById('profile-grid');
+  grid.innerHTML = '';
+  profiles.forEach(p => {
+    const remain = calcRemain(p);
+    const card = document.createElement('div');
+    card.className = 'profile-card';
+    card.innerHTML = `
+      <button class="p-delete" title="ลบ" data-id="${p.id}">✕</button>
+      <div class="p-name">${p.name || 'ไม่มีชื่อ'}</div>
+      <div class="p-label">เงินคงเหลือสุทธิ</div>
+      <div class="p-remain ${remain >= 0 ? 'pos' : 'neg'}">${fmt(remain)}</div>
+    `;
+    card.querySelector('.p-delete').addEventListener('click', e => { e.stopPropagation(); deleteProfile(p.id); });
+    card.addEventListener('click', () => openProfile(p.id));
+    grid.appendChild(card);
+  });
+  const addBtn = document.createElement('button');
+  addBtn.className = 'btn-add';
+  addBtn.innerHTML = '<span class="plus">+</span> เพิ่มโปรไฟล์ใหม่';
+  addBtn.onclick = openModal;
+  grid.appendChild(addBtn);
+}
+
+/* ── MODAL ── */
+function openModal() {
+  document.getElementById('modal-name').value = '';
+  document.getElementById('modal').classList.add('open');
+  setTimeout(() => document.getElementById('modal-name').focus(), 100);
+}
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+function confirmNew() {
+  const name = document.getElementById('modal-name').value.trim();
+  if (!name) { document.getElementById('modal-name').focus(); return; }
+  const id = 'p_' + Date.now();
+  const p = { id, name, salary: 0, fixedRows: defaultFixedRows(), monthlyRows: defaultMonthlyRows() };
+  profiles.push(p);
+  saveAll();
+  closeModal();
+  openProfile(id);
+}
+document.getElementById('modal-name').addEventListener('keydown', e => { if (e.key === 'Enter') confirmNew(); });
+
+function deleteProfile(id) {
+  if (!confirm('ลบโปรไฟล์นี้?')) return;
+  profiles = profiles.filter(p => p.id !== id);
+  saveAll(); renderHome();
+}
+
+/* ── OPEN / SAVE ── */
+function openProfile(id) {
+  currentId = id;
+  const p = profiles.find(x => x.id === id);
+  renderProfile(p);
+  showPage('page-detail');
+}
+
+function onNameInput() {
+  document.getElementById('detail-title').textContent = document.getElementById('profile-name').value || 'โปรไฟล์';
+}
+
+function saveProfile() {
+  const p = profiles.find(x => x.id === currentId);
+  if (!p) return;
+  p.name = document.getElementById('profile-name').value.trim() || 'ไม่มีชื่อ';
+  p.salary = getVal(document.getElementById('salary'));
+  p.fixedRows = collectRows('fixed');
+  p.monthlyRows = collectRows('monthly');
+  saveAll(); renderHome(); showToast('💾 บันทึกแล้ว');
+}
+
+function resetForm() {
+  document.getElementById('salary').value = '0';
+  document.querySelectorAll('#fixed-card .num-input, #monthly-card .num-input').forEach(el => el.value = '0');
+  calc();
+}
+
+/* ── NAV ── */
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+function goHome() { showPage('page-home'); renderHome(); }
+
+/* ── TOAST ── */
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* ── BOOT ── */
+// Init static rows on first load
+initDetailListeners();
+renderHome();
+</script>
+</body>
+</html>
