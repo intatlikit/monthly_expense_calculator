@@ -196,6 +196,24 @@
   .modal.cat-modal h3 { color: var(--accent); }
   .modal.cat-modal input[type="text"]:focus { border-color: var(--accent); }
   .modal.cat-modal .btn-confirm { background: linear-gradient(135deg, var(--accent2), #e0a040); color: #1a1200; }
+
+  /* Sync */
+  .sync-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; margin-bottom: 24px; }
+  .sync-title { font-weight: 700; color: var(--accent2); margin-bottom: 2px; }
+  .sync-desc { font-size: 0.8rem; color: var(--muted); margin-bottom: 10px; }
+  .sync-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sync-row input { flex: 1; min-width: 160px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 0.9rem; padding: 10px 12px; outline: none; transition: border-color 0.2s; }
+  .sync-row input:focus { border-color: var(--accent); }
+  .sync-row button { border-radius: 10px; font-family: 'Sarabun', sans-serif; font-size: 0.9rem; font-weight: 600; padding: 10px 14px; cursor: pointer; transition: all 0.2s; }
+  .btn-sync { background: linear-gradient(135deg, var(--accent), #5a4fcc); border: none; color: #fff; }
+  .btn-sync:hover { opacity: 0.85; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .sync-status, .save-status { font-size: 0.8rem; color: var(--muted); }
+  .sync-status { margin-top: 8px; min-height: 1em; }
+  .save-status { margin-left: auto; white-space: nowrap; }
+  .sync-status.ok, .save-status.ok { color: var(--green); }
+  .sync-status.err, .save-status.err { color: var(--red); }
 </style>
 </head>
 <body>
@@ -207,6 +225,17 @@
       <h1>💰 ค่าใช้จ่ายต่อเดือน</h1>
       <p>เลือกโปรไฟล์หรือเพิ่มใหม่</p>
     </div>
+    <div class="sync-card">
+      <div class="sync-title">☁️ ซิงก์ข้ามเครื่อง</div>
+      <div class="sync-desc" id="sync-desc">ใส่ Sync Key เดียวกันทุกเครื่องเพื่อเห็นข้อมูลชุดเดียวกัน — ตั้งให้เดายากเหมือนรหัสผ่าน</div>
+      <div class="sync-row" id="sync-row">
+        <input type="password" id="sync-key" placeholder="Sync Key (อย่างน้อย 8 ตัวอักษร)" autocomplete="off">
+        <button class="btn-ghost" title="แสดง/ซ่อนคีย์" onclick="toggleKeyVisible()">👁</button>
+        <button class="btn-sync" onclick="connectSync()">เชื่อมต่อ</button>
+        <button class="btn-ghost" id="btn-unsync" onclick="disconnectSync()">ยกเลิก</button>
+      </div>
+      <div class="sync-status" id="sync-status"></div>
+    </div>
     <div class="profile-grid" id="profile-grid"></div>
   </div>
 </div>
@@ -217,6 +246,7 @@
     <div class="detail-header">
       <button class="btn-back" onclick="goHome()">← กลับ</button>
       <h2 id="detail-title">โปรไฟล์</h2>
+      <span class="save-status" id="save-status"></span>
     </div>
 
     <!-- ชื่อ -->
@@ -298,9 +328,142 @@
 const fmt = n => '฿' + n.toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2});
 const fmtNeg = n => '-฿' + Math.abs(n).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2});
 
-let profiles = JSON.parse(localStorage.getItem('expense_profiles_v2') || '[]');
+const STORE_KEY = 'expense_profiles_v2';
+const SYNC_KEY_STORE = 'expense_sync_key';
+const AUTOSAVE_MS = 3000;
+
+let profiles = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
 let currentId = null;
-function saveAll() { localStorage.setItem('expense_profiles_v2', JSON.stringify(profiles)); }
+function saveLocal() { localStorage.setItem(STORE_KEY, JSON.stringify(profiles)); }
+function saveAll() { saveLocal(); pushRemote(); }
+
+/* ── CLOUD SYNC (Supabase) ── */
+// Placeholders are replaced from repo secrets by .github/workflows/deploy.yml.
+// Opened locally (placeholders intact), the app runs on localStorage only.
+const SUPABASE_URL = '__SUPABASE_URL__'.replace(/\/+$/, '');
+const SUPABASE_KEY = '__SUPABASE_ANON_KEY__';
+const CLOUD = /^https:\/\//.test(SUPABASE_URL) && !/^__/.test(SUPABASE_KEY);
+let syncKey = CLOUD ? (localStorage.getItem(SYNC_KEY_STORE) || '') : '';
+
+async function rpc(fn, args) {
+  const headers = { 'Content-Type': 'application/json', apikey: SUPABASE_KEY };
+  // Legacy anon keys are JWTs and also go in Authorization; new sb_publishable_ keys must not.
+  if (SUPABASE_KEY.startsWith('eyJ')) headers.Authorization = 'Bearer ' + SUPABASE_KEY;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST', headers, body: JSON.stringify(args), keepalive: true
+  });
+  if (!res.ok) throw new Error(`${fn}: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+const timeStr = () => new Date().toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'});
+
+function setStatus(text, kind = '') {
+  ['sync-status', 'save-status'].forEach(id => {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.className = id + (kind ? ' ' + kind : '');
+  });
+}
+
+let pushing = false, pushAgain = false;
+async function pushRemote() {
+  if (!syncKey) { setStatus('✓ บันทึกแล้ว ' + timeStr(), 'ok'); return; }
+  if (pushing) { pushAgain = true; return; }
+  pushing = true;
+  setStatus('☁️ กำลังซิงก์…');
+  try {
+    await rpc('save_expense_data', { p_key: syncKey, p_data: profiles });
+    setStatus('☁️ ซิงก์แล้ว ' + timeStr(), 'ok');
+  } catch (e) {
+    console.error(e);
+    setStatus('⚠️ ซิงก์ไม่สำเร็จ — บันทึกไว้ในเครื่องแล้ว', 'err');
+  } finally {
+    pushing = false;
+    if (pushAgain) { pushAgain = false; pushRemote(); }
+  }
+}
+
+function applyRemote(data) {
+  profiles = data;
+  saveLocal();
+  setStatus('☁️ ซิงก์แล้ว ' + timeStr(), 'ok');
+}
+
+async function refreshFromCloud() {
+  if (!syncKey) return;
+  setStatus('☁️ กำลังโหลด…');
+  try {
+    const data = await rpc('get_expense_data', { p_key: syncKey });
+    if (Array.isArray(data)) {
+      applyRemote(data);
+      if (document.getElementById('page-home').classList.contains('active')) renderHome();
+    } else {
+      await pushRemote();  // no cloud row for this key yet: upload this device's data
+    }
+  } catch (e) {
+    console.error(e);
+    setStatus('⚠️ โหลดจากคลาวด์ไม่สำเร็จ — ใช้ข้อมูลในเครื่อง', 'err');
+  }
+}
+
+async function connectSync() {
+  const key = document.getElementById('sync-key').value.trim();
+  if (key.length < 8) { showToast('⚠️ คีย์ต้องมีอย่างน้อย 8 ตัวอักษร'); return; }
+  if (key === syncKey) { refreshFromCloud(); return; }
+  setStatus('☁️ กำลังเชื่อมต่อ…');
+  let data;
+  try { data = await rpc('get_expense_data', { p_key: key }); }
+  catch (e) { console.error(e); setStatus('⚠️ เชื่อมต่อไม่สำเร็จ', 'err'); return; }
+  if (Array.isArray(data) && profiles.length &&
+      !confirm('คีย์นี้มีข้อมูลบนคลาวด์อยู่แล้ว\nข้อมูลในเครื่องนี้จะถูกแทนที่ด้วยข้อมูลบนคลาวด์ ดำเนินการต่อ?')) {
+    setStatus('');
+    return;
+  }
+  syncKey = key;
+  localStorage.setItem(SYNC_KEY_STORE, key);
+  if (Array.isArray(data)) applyRemote(data); else await pushRemote();
+  renderSyncCard(); renderHome();
+  showToast('☁️ เชื่อมต่อแล้ว');
+}
+
+function disconnectSync() {
+  if (!confirm('หยุดซิงก์บนเครื่องนี้? (ข้อมูลยังอยู่ในเครื่องและบนคลาวด์)')) return;
+  syncKey = '';
+  localStorage.removeItem(SYNC_KEY_STORE);
+  document.getElementById('sync-key').value = '';
+  renderSyncCard();
+  setStatus('');
+}
+
+function toggleKeyVisible() {
+  const input = document.getElementById('sync-key');
+  input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+function renderSyncCard() {
+  if (!CLOUD) {
+    document.getElementById('sync-desc').textContent = 'ยังไม่ได้ตั้งค่า Supabase — ข้อมูลเก็บเฉพาะในเครื่องนี้';
+    document.getElementById('sync-row').style.display = 'none';
+    return;
+  }
+  document.getElementById('sync-key').value = syncKey;
+  document.getElementById('btn-unsync').style.display = syncKey ? '' : 'none';
+}
+
+/* ── AUTOSAVE ── */
+let saveTimer = null;
+function scheduleSave() {
+  if (!currentId) return;
+  clearTimeout(saveTimer);
+  setStatus('⏳ รอบันทึก…');
+  saveTimer = setTimeout(() => { saveTimer = null; saveProfile(true); }, AUTOSAVE_MS);
+}
+function flushSave() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer); saveTimer = null;
+  saveProfile(true);
+}
 
 /* ── INPUT VALIDATION ── */
 function sanitizeNum(input) {
@@ -356,7 +519,7 @@ function addRow(catId) {
   const row = makeRow(catId);
   card.appendChild(row);
   row.querySelector('.dyn-label-input').focus();
-  calc();
+  calc(); scheduleSave();
 }
 
 function delRow(btn) {
@@ -367,7 +530,7 @@ function delRow(btn) {
     return;
   }
   row.remove();
-  calc();
+  calc(); scheduleSave();
 }
 
 /* ── CATEGORY MANAGEMENT ── */
@@ -431,7 +594,7 @@ function deleteCategory(catId) {
   const block = document.querySelector(`.category-block[data-cat-id="${catId}"]`);
   if (block && confirm('ลบหมวดหมู่นี้และรายการทั้งหมดในนั้น?')) {
     block.remove();
-    calc();
+    calc(); scheduleSave();
   }
 }
 
@@ -440,7 +603,7 @@ function addCategory(name) {
   const cat = { id, name, rows: [{ key: 'r_init_' + Date.now(), label: '', value: '0' }] };
   const container = document.getElementById('categories-container');
   container.appendChild(makeCategoryBlock(cat));
-  calc();
+  calc(); scheduleSave();
 }
 
 /* ── COLLECT DATA FROM DOM ── */
@@ -513,7 +676,6 @@ function renderProfile(p) {
   document.getElementById('profile-name').value = p.name || '';
   document.getElementById('detail-title').textContent = p.name || 'โปรไฟล์';
   document.getElementById('salary').value = p.salary ?? 0;
-  attachValidation(document.getElementById('salary'));
 
   const container = document.getElementById('categories-container');
   container.innerHTML = '';
@@ -648,20 +810,25 @@ function onNameInput() {
   document.getElementById('detail-title').textContent = document.getElementById('profile-name').value || 'โปรไฟล์';
 }
 
-function saveProfile() {
+function saveProfile(silent = false) {
+  clearTimeout(saveTimer); saveTimer = null;
   const p = profiles.find(x => x.id === currentId);
   if (!p) return;
   p.name = document.getElementById('profile-name').value.trim() || 'ไม่มีชื่อ';
   p.salary = getVal(document.getElementById('salary'));
   p.categories = collectCategories();
-  saveAll(); renderHome(); showToast('💾 บันทึกแล้ว');
+  saveAll(); renderHome();
+  if (!silent) showToast('💾 บันทึกแล้ว');
 }
 
 function resetForm() {
   document.getElementById('salary').value = '0';
   document.querySelectorAll('.category-block .num-input').forEach(el => el.value = '0');
-  calc();
+  calc(); scheduleSave();
 }
+
+// Any typing on the detail page (name, salary, labels, amounts, category names) triggers autosave.
+document.getElementById('page-detail').addEventListener('input', scheduleSave);
 
 /* ── NAV ── */
 function showPage(id) {
@@ -669,7 +836,7 @@ function showPage(id) {
   document.getElementById(id).classList.add('active');
   window.scrollTo(0, 0);
 }
-function goHome() { showPage('page-home'); renderHome(); }
+function goHome() { flushSave(); showPage('page-home'); renderHome(); }
 
 /* ── TOAST ── */
 function showToast(msg) {
@@ -679,7 +846,17 @@ function showToast(msg) {
 }
 
 /* ── BOOT ── */
+// Save pending edits when the tab is hidden/closed; pull other devices' changes when it returns to home.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushSave();
+  else if (document.getElementById('page-home').classList.contains('active') && !saveTimer) refreshFromCloud();
+});
+window.addEventListener('pagehide', flushSave);
+
+attachValidation(document.getElementById('salary'));
+renderSyncCard();
 renderHome();
+refreshFromCloud();
 </script>
 </body>
 </html>
