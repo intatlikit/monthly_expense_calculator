@@ -200,15 +200,7 @@
   /* Sync */
   .sync-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; margin-bottom: 24px; }
   .sync-title { font-weight: 700; color: var(--accent2); margin-bottom: 2px; }
-  .sync-desc { font-size: 0.8rem; color: var(--muted); margin-bottom: 10px; }
-  .sync-row { display: flex; gap: 8px; flex-wrap: wrap; }
-  .sync-row input { flex: 1; min-width: 160px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 0.9rem; padding: 10px 12px; outline: none; transition: border-color 0.2s; }
-  .sync-row input:focus { border-color: var(--accent); }
-  .sync-row button { border-radius: 10px; font-family: 'Sarabun', sans-serif; font-size: 0.9rem; font-weight: 600; padding: 10px 14px; cursor: pointer; transition: all 0.2s; }
-  .btn-sync { background: linear-gradient(135deg, var(--accent), #5a4fcc); border: none; color: #fff; }
-  .btn-sync:hover { opacity: 0.85; }
-  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
-  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .sync-desc { font-size: 0.8rem; color: var(--muted); }
   .sync-status, .save-status { font-size: 0.8rem; color: var(--muted); }
   .sync-status { margin-top: 8px; min-height: 1em; }
   .save-status { margin-left: auto; white-space: nowrap; }
@@ -227,13 +219,7 @@
     </div>
     <div class="sync-card">
       <div class="sync-title">☁️ ซิงก์ข้ามเครื่อง</div>
-      <div class="sync-desc" id="sync-desc">ใส่ Sync Key เดียวกันทุกเครื่องเพื่อเห็นข้อมูลชุดเดียวกัน — ตั้งให้เดายากเหมือนรหัสผ่าน</div>
-      <div class="sync-row" id="sync-row">
-        <input type="password" id="sync-key" placeholder="Sync Key (อย่างน้อย 8 ตัวอักษร)" autocomplete="off">
-        <button class="btn-ghost" title="แสดง/ซ่อนคีย์" onclick="toggleKeyVisible()">👁</button>
-        <button class="btn-sync" onclick="connectSync()">เชื่อมต่อ</button>
-        <button class="btn-ghost" id="btn-unsync" onclick="disconnectSync()">ยกเลิก</button>
-      </div>
+      <div class="sync-desc" id="sync-desc"></div>
       <div class="sync-status" id="sync-status"></div>
     </div>
     <div class="profile-grid" id="profile-grid"></div>
@@ -329,7 +315,7 @@ const fmt = n => '฿' + n.toLocaleString('th-TH', {minimumFractionDigits:2, max
 const fmtNeg = n => '-฿' + Math.abs(n).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2});
 
 const STORE_KEY = 'expense_profiles_v2';
-const SYNC_KEY_STORE = 'expense_sync_key';
+const SYNCED_FLAG = 'expense_synced_once';
 const AUTOSAVE_MS = 3000;
 
 let profiles = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
@@ -342,8 +328,8 @@ function saveAll() { saveLocal(); pushRemote(); }
 // Opened locally (placeholders intact), the app runs on localStorage only.
 const SUPABASE_URL = '__SUPABASE_URL__'.replace(/\/+$/, '');
 const SUPABASE_KEY = '__SUPABASE_ANON_KEY__';
-const CLOUD = /^https:\/\//.test(SUPABASE_URL) && !/^__/.test(SUPABASE_KEY);
-let syncKey = CLOUD ? (localStorage.getItem(SYNC_KEY_STORE) || '') : '';
+const SYNC_KEY = '__SYNC_KEY__';
+const CLOUD = /^https:\/\//.test(SUPABASE_URL) && !/^__/.test(SUPABASE_KEY) && !/^__/.test(SYNC_KEY);
 
 async function rpc(fn, args) {
   const headers = { 'Content-Type': 'application/json', apikey: SUPABASE_KEY };
@@ -368,16 +354,18 @@ function setStatus(text, kind = '') {
 
 let pushing = false, pushAgain = false;
 async function pushRemote() {
-  if (!syncKey) { setStatus('✓ บันทึกแล้ว ' + timeStr(), 'ok'); return; }
-  if (pushing) { pushAgain = true; return; }
+  if (!CLOUD) { setStatus('✓ บันทึกแล้ว ' + timeStr(), 'ok'); return false; }
+  if (pushing) { pushAgain = true; return false; }
   pushing = true;
   setStatus('☁️ กำลังซิงก์…');
   try {
-    await rpc('save_expense_data', { p_key: syncKey, p_data: profiles });
+    await rpc('save_expense_data', { p_key: SYNC_KEY, p_data: profiles });
     setStatus('☁️ ซิงก์แล้ว ' + timeStr(), 'ok');
+    return true;
   } catch (e) {
     console.error(e);
     setStatus('⚠️ ซิงก์ไม่สำเร็จ — บันทึกไว้ในเครื่องแล้ว', 'err');
+    return false;
   } finally {
     pushing = false;
     if (pushAgain) { pushAgain = false; pushRemote(); }
@@ -391,64 +379,27 @@ function applyRemote(data) {
 }
 
 async function refreshFromCloud() {
-  if (!syncKey) return;
+  if (!CLOUD) return;
   setStatus('☁️ กำลังโหลด…');
   try {
-    const data = await rpc('get_expense_data', { p_key: syncKey });
-    if (Array.isArray(data)) {
-      applyRemote(data);
-      if (document.getElementById('page-home').classList.contains('active')) renderHome();
-    } else {
-      await pushRemote();  // no cloud row for this key yet: upload this device's data
-    }
+    const remote = await rpc('get_expense_data', { p_key: SYNC_KEY });
+    const base = Array.isArray(remote) ? remote : [];
+    // First sync on this device: keep profiles that exist only here instead of overwriting them.
+    const extra = localStorage.getItem(SYNCED_FLAG) ? [] : profiles.filter(p => !base.some(r => r.id === p.id));
+    if (Array.isArray(remote)) applyRemote(base.concat(extra));
+    const ok = (!Array.isArray(remote) || extra.length) ? await pushRemote() : true;
+    if (ok) localStorage.setItem(SYNCED_FLAG, '1');
+    if (document.getElementById('page-home').classList.contains('active')) renderHome();
   } catch (e) {
     console.error(e);
     setStatus('⚠️ โหลดจากคลาวด์ไม่สำเร็จ — ใช้ข้อมูลในเครื่อง', 'err');
   }
 }
 
-async function connectSync() {
-  const key = document.getElementById('sync-key').value.trim();
-  if (key.length < 8) { showToast('⚠️ คีย์ต้องมีอย่างน้อย 8 ตัวอักษร'); return; }
-  if (key === syncKey) { refreshFromCloud(); return; }
-  setStatus('☁️ กำลังเชื่อมต่อ…');
-  let data;
-  try { data = await rpc('get_expense_data', { p_key: key }); }
-  catch (e) { console.error(e); setStatus('⚠️ เชื่อมต่อไม่สำเร็จ', 'err'); return; }
-  if (Array.isArray(data) && profiles.length &&
-      !confirm('คีย์นี้มีข้อมูลบนคลาวด์อยู่แล้ว\nข้อมูลในเครื่องนี้จะถูกแทนที่ด้วยข้อมูลบนคลาวด์ ดำเนินการต่อ?')) {
-    setStatus('');
-    return;
-  }
-  syncKey = key;
-  localStorage.setItem(SYNC_KEY_STORE, key);
-  if (Array.isArray(data)) applyRemote(data); else await pushRemote();
-  renderSyncCard(); renderHome();
-  showToast('☁️ เชื่อมต่อแล้ว');
-}
-
-function disconnectSync() {
-  if (!confirm('หยุดซิงก์บนเครื่องนี้? (ข้อมูลยังอยู่ในเครื่องและบนคลาวด์)')) return;
-  syncKey = '';
-  localStorage.removeItem(SYNC_KEY_STORE);
-  document.getElementById('sync-key').value = '';
-  renderSyncCard();
-  setStatus('');
-}
-
-function toggleKeyVisible() {
-  const input = document.getElementById('sync-key');
-  input.type = input.type === 'password' ? 'text' : 'password';
-}
-
 function renderSyncCard() {
-  if (!CLOUD) {
-    document.getElementById('sync-desc').textContent = 'ยังไม่ได้ตั้งค่า Supabase — ข้อมูลเก็บเฉพาะในเครื่องนี้';
-    document.getElementById('sync-row').style.display = 'none';
-    return;
-  }
-  document.getElementById('sync-key').value = syncKey;
-  document.getElementById('btn-unsync').style.display = syncKey ? '' : 'none';
+  document.getElementById('sync-desc').textContent = CLOUD
+    ? 'ข้อมูลซิงก์อัตโนมัติ — ทุกเครื่องเห็นชุดเดียวกัน'
+    : 'ยังไม่ได้ตั้งค่า Supabase — ข้อมูลเก็บเฉพาะในเครื่องนี้';
 }
 
 /* ── AUTOSAVE ── */
